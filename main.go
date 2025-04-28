@@ -5,15 +5,9 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 	"net/http"
 	"strconv"
 )
-
-type Data struct {
-	Title string `json:"title" `
-	Date  string `json:"date"`
-}
 
 type HuelNews struct {
 	Id    uint   `json:"id" gorm:"primarykey"`
@@ -24,20 +18,12 @@ type HuelNews struct {
 // 数据库连接初始化
 var mydb *gorm.DB
 
-const (
-	USERNAME = "c.c"
-	PASSWORD = ""
-	HOST     = "localhost"
-	PORT     = 5432
-	DATABASE = "postgres"
-)
-
 func initDB() error {
 	var err error
 	dsn := "host=localhost user='c.c' password='' dbname=postgres port=5432 sslmode=disable TimeZone=Asia/Shanghai"
 	fmt.Printf("dsn: %s\n", dsn)
 	mydb, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info), //设置全局日志
+		//Logger: logger.Default.LogMode(logger.Info), //设置全局日志
 	})
 	if err != nil {
 		return fmt.Errorf("failed to connect to database: %w", err)
@@ -55,17 +41,22 @@ func main() {
 		panic(err)
 	}
 	ReqUrl := "https://www.huel.edu.cn/index/xydt2.htm"
+	ch := make(chan bool)
 	for i := 1; i < 72; i++ {
-		fmt.Printf("开始爬取第%d页\n", i)
-		Spider(ReqUrl)
-		fmt.Println("======第", i, "页爬取完成======")
-		ReqUrl = "https://www.huel.edu.cn/index/xydt2/" + strconv.Itoa(i) + ".htm"
+		go func(i int) {
+			fmt.Printf("开始爬取第%d页\n", i)
+			Spider(ReqUrl, ch)
+			fmt.Println("======第", i, "页爬取完成======")
+			ReqUrl = "https://www.huel.edu.cn/index/xydt2/" + strconv.Itoa(i) + ".htm"
+		}(i)
 	}
+	for i := 1; i < 72; i++ {
+		<-ch
+	}
+	fmt.Println("全部爬取成功")
 }
 
-var id uint = 1
-
-func Spider(url string) {
+func Spider(url string, ch chan bool) {
 	//1.发送请求
 	client := http.Client{}
 	req, _ := http.NewRequest("GET", url, nil)
@@ -100,6 +91,7 @@ func Spider(url string) {
 			}
 			fmt.Printf("正在读取第 %d 个元素", i)
 			fmt.Println(data)
+			//4.保存内容
 			// 保存到数据库
 			if err := mydb.FirstOrCreate(&data).Error; err != nil {
 				fmt.Printf("保存第 %d 个元素失败: %v\n", i, err)
@@ -108,7 +100,9 @@ func Spider(url string) {
 			}
 		})
 
-	//4.保存内容
+	if ch != nil {
+		ch <- true
+	}
 }
 
 //正则表达式
